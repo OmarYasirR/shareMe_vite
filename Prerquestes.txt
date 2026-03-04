@@ -1,0 +1,25 @@
+_________Files to add to The Project
+
+1- assets Folder
+2- index.css file
+3- create google client Id
+4- Category From Data file
+5- setting Mongo DB
+
+#Ensure :-
+
+1- useQuiry Hook in Search Component
+2- find function in backend code in pin Controller file in Search pin function
+3- Search Upload img to Mongo DB
+
+
+
+#Additions :-
+
+1- Add a Deffrent Loader
+2- Add Cring face Icon Search Component if There is No Result.
+3- Add headers To Requests AUTH.
+4- Add Sign Up user Page
+
+
+###finally Deploy The project to Netlify
