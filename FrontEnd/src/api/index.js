@@ -49,15 +49,7 @@ export const signInUser = async (user) => {
     body: JSON.stringify(user),
   });
 
-  return response;
-  // const res = await fetch(`${API}/user/signin`,{
-  //   method: 'POST',
-  //   headers:{
-  //     'Content-Type': 'application/json'
-  //   },
-  //   body: JSON.stringify(user),
-  // })
-  // return res
+  return response
 };
 
 export const signUpUser = async (userData) => {
@@ -69,17 +61,6 @@ export const signUpUser = async (userData) => {
     body: JSON.stringify(userData),
   });
   return response;
-  // const response = await fetch(`${API}/user/signup`, {
-  //   method: 'POST',
-  //   headers: {
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify(userData),
-  // })
-
-  // const data = await response.json();
-  // console.log('Signup successful:', data);
-  // return data;
 };
 
 export const fetchGoogleUser = async (code) => {
@@ -220,15 +201,15 @@ const pinsAPI = {
     body: pinData,
   });
 },
-  search: async (query, options = {}) => {
+  search: async (query) => {
     return apiRequest("/pins/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, ...options }),
+      body: JSON.stringify({query}),
     });
   },
 
-  save: async (pinId, userId) => {
+  save: async (pinId) => {
     return apiRequest(`/pins/${pinId}/save`, {
       method: "POST",
       headers: {

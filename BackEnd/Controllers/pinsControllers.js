@@ -375,10 +375,12 @@ export const unlikePin = async (req, res) => {
 }
 
 export const searchPin = async (req, res) => {
-  const { query } = req.query; // Changed from req.body to req.query for GET requests
-  
+  const { query } = req.body;
+  console.log(query)
+  console.log('search pin request')
   try {
     if (!query) {
+      console.log('Search query is required')
       return res.status(400).json({ error: 'Search query is required' })
     }
     
@@ -390,7 +392,11 @@ export const searchPin = async (req, res) => {
         { tags: { $regex: query, $options: 'i' } },
         { category: { $regex: query, $options: 'i' } }
       ]
-    }).populate('createdUser', 'username avatar')
+    }).populate('createdUser', 'firstName lastName img email')
+      .populate({
+        path: 'comments.user',
+        select: 'firstName lastName img email username'
+      })
     
     res.status(200).json(data)
   } catch (error) {

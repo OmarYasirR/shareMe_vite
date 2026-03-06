@@ -9,7 +9,7 @@ import CreatePin from "./pages/CreatePin";
 import Search from "./pages/Search";
 
 import UserProfile from "./pages/UserProfile";
-import Pin from "./pages/Pin";
+import Pin from "./pages/Pin"; 
 import EditPin from "./pages/EditPin";
 
 const App = () => {
@@ -27,7 +27,7 @@ const App = () => {
           <Route path="/signup" element={<SignUp />} />
           <Route path="/pin/:pinId" element={<Pin />} />
           <Route path="/create-pin" element={<CreatePin />} />
-          <Route path="/search/search" element={<Search />} />
+          <Route path="/search" element={<Search />} />
           <Route path="/user-profile/:id" element={<UserProfile />} />
           <Route path='/pin/:pinId/edit' element={<EditPin />} />
           

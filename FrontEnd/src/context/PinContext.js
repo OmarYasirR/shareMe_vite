@@ -23,6 +23,8 @@ const initialState = {
   totalPins: 0,
   page: 1, // For pagination
   loadingMore: false,
+  isSearching: false,
+  searchedPins: []
 };
 
 export const pinsReducer = (state, action) => {
@@ -345,6 +347,27 @@ export const pinsReducer = (state, action) => {
         loadingMore: false,
         error: action.payload,
       }
+
+    case 'START_SEARCHING': 
+      return{
+        ...state,
+        isSearching: true,
+        error: null
+      }
+
+      case 'SEARCHIN_SCUCSESS':
+        return{
+          ...state,
+          isSearching: false,
+          searchedPins: action.payload
+        }
+
+      case 'SEARCH_FAILURE':
+        return{
+          ...state, 
+          isSearching: false,
+          error: action.payload
+        }
     default:
       console.warn(`Unknown action type: ${action.type}`);
       return state;
