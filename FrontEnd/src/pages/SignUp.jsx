@@ -125,10 +125,18 @@ const SignUp = () => {
       }
 
       const res = await signUpUser(userData);
-      
-      console.log(JSON.stringify(res))
-      localStorage.setItem("User", JSON.stringify(res));
-      dispatch({ type: "LOGIN", payload: res });
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.log("Signup failed:", errorData);
+        throw new Error(errorData.error || "Sign up failed");
+      }
+      console.log("Signup successful:", res);
+      const { user } = await res.json();
+      console.log(user);
+      // console.log("Signup successful:", user.email);
+
+      localStorage.setItem("User", JSON.stringify(user));
+      dispatch({ type: "LOGIN", payload: user });
       setLoading(false);
       navigate("/");
     } catch (error) {

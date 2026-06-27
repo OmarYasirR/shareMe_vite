@@ -73,7 +73,7 @@ const SideBar = ({ toggleSideBar, setToggleSideBar }) => {
     return (
       <div className="flex flex-col justify-between bg-white h-full hide-scrollbar z-50">
         <div className="flex flex-col">
-          <Link className="flex gap-2 my-6 pt-1 w-190 items-center" to="/">
+          <Link className="flex gap-2 my-4 pt-1 w-[150px] items-center" to="/">
             <img src={logo} alt="logo" className="w-full" />
           </Link>
           <div className="flex flex-col gap-4">
@@ -106,10 +106,10 @@ const SideBar = ({ toggleSideBar, setToggleSideBar }) => {
             {user && (
               <Link
                 to={`user-profile/${user._id}`}
-                className="flex my-5 mb-3 p-2 gap-2 items-center rounded-lg shadow-lg bg-white"
+                className="flex p-2 pl-0 gap-2 items-center rounded-lg shadow-lg bg-white"
               >
-                <UserAvatar user={user} size="lg" border />
-                <p className="capitalize text-base font-bold text-red-500">{`${user.firstName} ${user.lastName}`}</p>
+                <UserAvatar user={user} size="sm" border />
+                <p className="capitalize text-sm text-red-500">{`${user.firstName} ${user.lastName}`}</p>
               </Link>
             )}
           </div>

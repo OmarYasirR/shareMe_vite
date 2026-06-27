@@ -100,6 +100,8 @@ export const signIn = async (req, res) => {
 export const signUp = async (req, res) => {
   const { firstName, lastName, email, password, img } = req.body;
 
+  console.log('singing in')
+
   try {
     // Check if user already exists
     const existEmail = await User.findOne({ email });
@@ -157,7 +159,7 @@ export const signUp = async (req, res) => {
     }
 
     console.log("Signup completed:", userResponse.email);
-    res.status(201).json(userResponse);
+    res.status(201).json({ user: userResponse } );
   } catch (error) {
     console.error("Signup error:", error);
 
