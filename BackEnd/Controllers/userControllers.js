@@ -98,7 +98,7 @@ export const handleGoogleSignUp = async (req, res) => {
       message: "Successfully logged in with Google",
       usr: userResponse,
     });
-  }
+  } 
 
   const newUser = await User.create(usr);
 
