@@ -19,10 +19,14 @@ const initialState = {
   error: null,
   selectedCategory: "all",
   searchQuery: "",
-  hasMore: false,
+  pagination: {
+    page: 1,
+    limit: 20,
+    total: 0,
+    hasMore: false,
+  },
   totalPins: 0,
   page: 1, // For pagination
-  loadingMore: false,
   isSearching: false,
   searchedPins: []
 };
@@ -32,27 +36,20 @@ export const pinsReducer = (state, action) => {
     case "SET_PINS":
       return {
         ...state,
-        pins: action.payload.pins.reverse() || [],
-        totalPins: action.payload.total || action.payload.pins?.length || 0,
-        categories: Array.from(
-          new Set(action.payload.pins?.map((pin) => pin.category) || []),
-        ),
+        pins: action.payload.data || [],
         isLoading: false,
+        categories: Array.from(
+          new Set(action.payload.data?.map((pin) => pin.category) || []),
+        ),
         error: null,
-        hasMore:
-          action.payload.hasMore !== undefined
-            ? action.payload.hasMore
-            : (action.payload.pins?.length || 0) >= 20,
+        pagination: action.payload.pagination || state.pagination,
       };
 
     case "LOAD_MORE":
       return {
-        ...state,
+        ...state, 
         pins: [...state.pins, ...(action.payload.data || [])],
-        totalPins: state.pins.length + (action.payload.pins?.length || 0),
-        loadingMore: false,
-        hasMore:
-          action.payload.hasMore !== undefined ? action.payload.hasMore : true,
+        pagination: action.payload.pagination || state.pagination,
         error: null,
       };
 
@@ -66,11 +63,6 @@ export const pinsReducer = (state, action) => {
       return {
         ...state,
         pins: [newPin, ...state.pins],
-        filteredPins:
-          state.selectedCategory === "all" ||
-          state.selectedCategory === newPin.category
-            ? [newPin, ...state.filteredPins]
-            : state.filteredPins,
         categories: updatedCategories,
         totalPins: state.totalPins + 1,
       };
@@ -79,9 +71,9 @@ export const pinsReducer = (state, action) => {
       const deletedPin = action.payload;
       return {
         ...state,
-        pins: state.pins.filter((pin) => pin._id !== deletedPin._id),
+        pins: state.pins.filter((pin) => pin._id !== deletedPin),
         filteredPins: state.filteredPins.filter(
-          (pin) => pin._id !== deletedPin._id,
+          (pin) => pin._id !== deletedPin,
         ),
         totalPins: Math.max(0, state.totalPins - 1),
       };
@@ -98,14 +90,13 @@ export const pinsReducer = (state, action) => {
       };
 
     case "FILTER_BY_CATEGORY":
-      const category = action.payload;
+      console.log("Reducer FILTER_BY_CATEGORY payload:", action.payload);
+      const data = action.payload;
       return {
         ...state,
-        selectedCategory: category,
-        filteredPins:
-          category === "all"
-            ? state.pins
-            : state.pins.filter((pin) => pin.category === category),
+        selectedCategory: data.category,
+        filteredPins: data.pins || [],
+        pagination: data.pagination || state.pagination,
       };
 
     case "SEARCH_PINS":
@@ -247,7 +238,7 @@ export const pinsReducer = (state, action) => {
               ? pin.likes?.filter((id) => id !== userId) || []
               : [...(pin.likes || []), userId];
 
-            return {
+            return {  
               ...pin,
               likes: updatedLikes,
               likesCount: updatedLikes.length,
@@ -338,9 +329,6 @@ export const pinsReducer = (state, action) => {
         filteredPins: [],
       };
 
-    case "LOADING_MORE":
-      return { ...state, loadingMore: true, error: null }
-
     case "LOAD_MORE_FAILURE":
       return {
         ...state,
@@ -391,7 +379,7 @@ export const PinsContextProvider = ({ children }) => {
     try {
       dispatch({ type: "SET_ERROR", payload: null });
       dispatch({ type: "SET_LOADING", payload: true });
-      const response = await getPins({ limit });
+      const response = await getPins({ limit });  
 
       if (!response.ok) {
         throw new Error(
@@ -400,19 +388,11 @@ export const PinsContextProvider = ({ children }) => {
       }
 
       const pins = await response.json();
+      console.log("Fetched pins:", pins);
 
       dispatch({
         type: "SET_PINS",
-        payload: {
-          pins: Array.isArray(pins) ? pins : pins.data || [],
-          total: pins.total || (Array.isArray(pins) ? pins.length : 0),
-          hasMore:
-            pins.hasMore !== undefined
-              ? pins.hasMore
-              : Array.isArray(pins)
-                ? pins.length >= limit  
-                : false,
-        },
+        payload:pins
       });
     } catch (error) {
       console.error("Error fetching pins:", error);
@@ -457,19 +437,19 @@ export const PinsContextProvider = ({ children }) => {
   }, [fetchPins]);
 
   // Auto-apply filters when pins change
-  useEffect(() => {
-    if (state.selectedCategory !== "all" || state.searchQuery) {
-      if (state.searchQuery) {
-        dispatch({ type: "SEARCH_PINS", payload: state.searchQuery });
-      }
-      if (state.selectedCategory !== "all") {
-        dispatch({
-          type: "FILTER_BY_CATEGORY",
-          payload: state.selectedCategory,
-        });
-      }
-    }
-  }, [state.pins, state.selectedCategory, state.searchQuery]);
+  // useEffect(() => {
+  //   if (state.selectedCategory !== "all" || state.searchQuery) {
+  //     if (state.searchQuery) {
+  //       dispatch({ type: "SEARCH_PINS", payload: state.searchQuery });
+  //     }
+  //     if (state.selectedCategory !== "all") {
+  //       dispatch({
+  //         type: "FILTER_BY_CATEGORY",
+  //         payload: state.selectedCategory,
+  //       });
+  //     }
+  //   }
+  // }, [state.pins, state.selectedCategory, state.searchQuery]);
 
   return (
     <PinsContext.Provider value={contextValue}>{children}</PinsContext.Provider>

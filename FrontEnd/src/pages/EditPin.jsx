@@ -177,7 +177,7 @@ const EditPin = () => {
       // Update context
       dispatch({
         type: "UPDATE_PIN",
-        payload: updatedPin.pin,
+        payload: updatedPin.data,
       });
       setFormData({
         title: "",
@@ -299,10 +299,7 @@ const EditPin = () => {
                 <p className="text-xs text-gray-500 mb-2">Current Image</p>
                 <div className="w-32 h-32 rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
                   <img
-                    src={BufferToDataURL(
-                      originalPin.img.data,
-                      originalPin.img.contentType
-                    )}
+                    src={originalPin.imgUrl}
                     alt={originalPin.title}
                     className="w-full h-full object-cover"
                   />
@@ -333,7 +330,7 @@ const EditPin = () => {
             )}
 
             {/* Image Upload Input */}
-            <div className="mt-2">
+            <div className={`mt-2 ${isSubmitting ? "opacity-50 cursor-not-allowed cursor-not-allowed " : ""}`}>
               <label
                 htmlFor="image-upload"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-xl cursor-pointer hover:bg-gray-200 transition-colors"
@@ -341,7 +338,8 @@ const EditPin = () => {
                 <MdAddPhotoAlternate className="w-5 h-5" />
                 {newImagePreview ? "Change Image" : "Upload New Image"}
               </label>
-              <input
+              <input  
+                disabled={isSubmitting}
                 type="file"
                 id="image-upload"
                 accept="image/*"

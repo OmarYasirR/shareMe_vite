@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { replace, useNavigate } from "react-router-dom";
 import {
   MdArrowBack,
   MdAddPhotoAlternate,
@@ -15,13 +15,11 @@ import Alert from "../components/Alert";
 import Loading from "../components/Loader";
 import Spinner from "../components/Spinner";
 import { usePinsContext } from "../hooks/usePinsContext";
-import { set } from "date-fns";
-
 
 const CreatePin = () => {
   const navigate = useNavigate();
   const { user } = useUserContext();
-  const {dispatch} = usePinsContext();
+  const { dispatch } = usePinsContext();
 
   // Form state
   const [formData, setFormData] = useState({
@@ -31,12 +29,13 @@ const CreatePin = () => {
     tags: [],
     image: null,
   });
-  const [tagsInput, setTagsInput] = useState();
+  const [tagsInput, setTagsInput] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Check authentication
   useEffect(() => {
@@ -56,19 +55,24 @@ const CreatePin = () => {
       return;
     }
 
-    // Validate file size (e.g., max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image size should be less than 5MB");
+    // Validate file size (max 10MB for Cloudinary)
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Image size should be less than 10MB");
       return;
     }
 
     setImageFile(file);
     setFormData((prev) => ({ ...prev, image: file }));
+    
+    // Create preview
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result);
     };
     reader.readAsDataURL(file);
+    
+    // Clear any previous errors
+    setError(null);
   };
 
   // Handle input changes
@@ -85,7 +89,7 @@ const CreatePin = () => {
       .split(",")
       .map((tag) => tag.trim())
       .filter((tag) => tag !== "");
-      console.log("Parsed tags:", tagsArray);
+    console.log("Parsed tags:", tagsArray);
     setFormData((prev) => ({ ...prev, tags: tagsArray }));
   };
 
@@ -102,29 +106,63 @@ const CreatePin = () => {
       setError("Title is required");
       return;
     }
+    if (!formData.category.trim()) {
+      setError("Category is required");
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
+    setUploadProgress(0);
 
     // Prepare FormData for file upload
     const formDataToSend = new FormData();
     formDataToSend.append("image", imageFile);
-    formDataToSend.append("title", formData.title);
-    formDataToSend.append("about", formData.about);
-    formDataToSend.append("category", formData.category);
-    formDataToSend.append("tags", formData.tags)
+    formDataToSend.append("title", formData.title.trim());
+    formDataToSend.append("about", formData.about.trim());
+    formDataToSend.append("category", formData.category.trim());
+    
+    // Send tags as JSON string or comma-separated
+    if (formData.tags.length > 0) {
+      formDataToSend.append("tags", JSON.stringify(formData.tags));
+      // Or if your backend expects comma-separated:
+      // formDataToSend.append("tags", formData.tags.join(","));
+    }
 
-    try { 
+    // Add user ID if needed
+    if (user && user._id) {
+      formDataToSend.append("userId", user._id);
+    }
+
+    try {
+      // Simulate upload progress (optional)
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
       const response = await createPin(formDataToSend);
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to create pin");
       }
 
-      const newPin = await response.json();
-      console.log("Pin created successfully:", newPin);
+        const {data: newPin} = await response.json();
+      console.log("Pin created successfully with Cloudinary:", newPin);
+      
+      // Update context with new pin
       dispatch({ type: "CREATE_PIN", payload: newPin });
+      
+      // Reset form
       setFormData({
         title: "",
         about: "",
@@ -132,15 +170,20 @@ const CreatePin = () => {
         tags: [],
         image: null,
       });
+      setTagsInput("");
+      setImageFile(null);
+      setImagePreview(null);
+      setUploadProgress(0);
       setSuccess(true);
 
       // Navigate to the new pin after short delay
       setTimeout(() => {
-        navigate(`/pin/${newPin._id}`);
+        navigate(`/pin/${newPin._id}`, { replace: true });
       }, 1500);
     } catch (err) {
       setError(err.message || "Failed to create pin");
       console.error("Error creating pin:", err);
+      setUploadProgress(0);
     } finally {
       setIsSubmitting(false);
     }
@@ -148,7 +191,21 @@ const CreatePin = () => {
 
   // Handle cancel
   const handleCancel = () => {
+    // Clear any uploaded files from state
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
     navigate(-1);
+  };
+
+  // Remove image
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setFormData((prev) => ({ ...prev, image: null }));
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
   };
 
   return (
@@ -173,6 +230,9 @@ const CreatePin = () => {
               <MdAddPhotoAlternate className="w-6 h-6" />
               Create New Pin
             </h1>
+            <p className="text-white/80 text-sm mt-1">
+              Upload your image and share it with the community
+            </p>
           </div>
 
           {/* Form */}
@@ -192,26 +252,27 @@ const CreatePin = () => {
                     />
                     <button
                       type="button"
-                      onClick={() => {
-                        setImageFile(null);
-                        setImagePreview(null);
-                      }}
-                      className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                      onClick={removeImage}
+                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
                       title="Remove image"
                     >
                       <MdCancel className="w-5 h-5" />
                     </button>
+                    {/* Show file info */}
+                    <div className="absolute bottom-2 left-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                      {imageFile && `${(imageFile.size / 1024 / 1024).toFixed(2)} MB`}
+                    </div>
                   </div>
                 ) : (
-                  <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                  <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors group">
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <MdAddPhotoAlternate className="w-12 h-12 text-gray-400 mb-3" />
+                      <MdAddPhotoAlternate className="w-12 h-12 text-gray-400 group-hover:text-red-500 transition-colors mb-3" />
                       <p className="mb-2 text-sm text-gray-500">
                         <span className="font-semibold">Click to upload</span>{" "}
                         or drag and drop
                       </p>
                       <p className="text-xs text-gray-500">
-                        PNG, JPG, GIF up to 5MB
+                        PNG, JPG, GIF, WebP up to 10MB
                       </p>
                     </div>
                     <input
@@ -219,6 +280,7 @@ const CreatePin = () => {
                       accept="image/*"
                       onChange={handleImageChange}
                       className="hidden"
+                      disabled={isSubmitting}
                     />
                   </label>
                 )}
@@ -240,9 +302,14 @@ const CreatePin = () => {
                 value={formData.title}
                 onChange={handleChange}
                 placeholder="e.g., Beautiful Sunset"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                 required
+                disabled={isSubmitting}
+                maxLength={100}
               />
+              <div className="text-xs text-gray-400 mt-1 text-right">
+                {formData.title.length}/100
+              </div>
             </div>
 
             {/* Description */}
@@ -260,8 +327,13 @@ const CreatePin = () => {
                 onChange={handleChange}
                 rows="4"
                 placeholder="Tell us more about this pin..."
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none transition-all"
+                disabled={isSubmitting}
+                maxLength={500}
               />
+              <div className="text-xs text-gray-400 mt-1 text-right">
+                {formData.about.length}/500
+              </div>
             </div>
 
             {/* Category */}
@@ -271,7 +343,7 @@ const CreatePin = () => {
                 className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1"
               >
                 <MdCategory className="w-4 h-4" />
-                Category
+                Category <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -280,7 +352,9 @@ const CreatePin = () => {
                 value={formData.category}
                 onChange={handleChange}
                 placeholder="e.g., Photography, Art, Food"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                required
+                disabled={isSubmitting}
               />
             </div>
 
@@ -300,19 +374,42 @@ const CreatePin = () => {
                 value={tagsInput}
                 onChange={handleTagsChange}
                 placeholder="nature, travel, landscape"
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                disabled={isSubmitting}
               />
-              <p className="text-xs text-gray-500 mt-1">
-                Separate tags with commas
-              </p>
+              <div className="flex justify-between mt-1">
+                <p className="text-xs text-gray-500">
+                  Separate tags with commas
+                </p>
+                {formData.tags.length > 0 && (
+                  <p className="text-xs text-gray-500">
+                    {formData.tags.length} tag{formData.tags.length > 1 ? 's' : ''}
+                  </p>
+                )}
+              </div>
             </div>
 
+            {/* Upload Progress (optional) */}
+            {isSubmitting && uploadProgress > 0 && uploadProgress < 100 && (
+              <div className="space-y-2">
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div
+                    className="bg-gradient-to-r from-red-500 to-rose-500 h-2.5 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-500 text-center">
+                  Uploading image... {uploadProgress}%
+                </p>
+              </div>
+            )}
+
             {/* Form Actions */}
-            <div className="flex gap-3 pt-4">
+            <div className="flex gap-3 pt-4 border-t border-gray-200">
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="flex-1 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-3 bg-gradient-to-r from-red-500 to-rose-500 text-white rounded-xl font-medium hover:from-red-600 hover:to-rose-600 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 shadow-lg shadow-red-500/25"
               >
                 {isSubmitting ? (
                   <>

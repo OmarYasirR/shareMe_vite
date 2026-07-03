@@ -2,12 +2,12 @@ import dotenv from 'dotenv'
 import express from 'express'
 import mongoose from 'mongoose'
 import {pinsRoutes} from './Routes/pinRoutes.js'
-import {userRoutes} from './Routes/userRoutes.js'
+import userRoutes from './Routes/userRoutes.js'
 import cors from 'cors'
 import path from 'path';
 
 dotenv.config()
-
+  
 const app = express()
 
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { usePinsContext } from "../hooks/usePinsContext";
 import { useGetPins } from "../hooks/useGetPins";
 import { IoMdAdd } from "react-icons/io";
@@ -7,18 +7,23 @@ import { Link, useNavigate } from "react-router-dom";
 import { useUserContext } from "../hooks/useUserContext.js";
 import Loader from "../components/Loader.jsx";
 import Alert from "../components/Alert.jsx";
-import { showMore } from "../api/index.js";
+import { getPins, showMore } from "../api/index.js";
 
 const Pins = () => {
-  const { pins, error, isLoading, hasMore, loadingMore, fetchPins, dispatch, filteredPins } = usePinsContext();
-  const [loadmoreError, setLoadMoreError] = useState(null); 
-  const [currentPins, setCurrentPins] = useState(filteredPins.length? filteredPins: pins)
+  const { pins, error, isLoading, hasMore, fetchPins, dispatch, filteredPins, pagination } = usePinsContext();
+  const [loadmoreError, setLoadMoreError] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const { user } = useUserContext();
   const navigate = useNavigate();
 
+  const currentPins = useMemo(() => {
+    return filteredPins.length ? filteredPins : pins;
+  }, [filteredPins.length, pins]);
 
 
-  console.log("Context pins:", pins);
+
+  console.log("Context pins:", currentPins);
+  // console.log("Filtered pins:", filteredPins); 
 
   const goToCreatePin = () => {
     
@@ -27,29 +32,30 @@ const Pins = () => {
   
     // load more pins
   const loadMorePins = async () => {
-    if (!hasMore) return;
+    if (!pagination.hasMore) return;
     setLoadMoreError(null);
     try {
-      dispatch({ type: "LOADING_MORE" });
-      const res = await showMore({ page: Math.floor(pins.length / 20) + 1, limit: 20 });
+      setLoadingMore(true);
+      const res = await getPins({ page: pagination.page + 1, limit: 10, skip: currentPins.length });
       if (!res.ok) {
         const errorData = await res.json();
         dispatch({ type: "LOAD_MORE_FAILURE", payload: errorData.message || "Failed to load more pins" });
         return;
       }
-      const data = await res.json();
+      const data = await res.json();  
       console.log("Load more response:", data); 
+      setCurrentPins(prevPins => [...prevPins, ...(data.data || [])]);
       dispatch({ type: "LOAD_MORE", payload: data });
     } catch (err) {
       console.error("Error loading more pins:", err);
       dispatch({ type: "LOAD_MORE_FAILURE", payload: err.message || "Failed to load more pins" });
       setLoadMoreError(err.message || "Failed to load more pins");
+    } finally {
+      setLoadingMore(false);
     }
   };
 
-  useEffect(() => {
-    setCurrentPins(filteredPins.length? filteredPins: pins)
-  }, [isLoading])
+
   
 
   if (isLoading) {
@@ -96,9 +102,10 @@ const Pins = () => {
     />
   );
 
+
   return (
     <div className="w-full bg-gray-50 relative">
-      <PinsMasonry pins={currentPins} hasMore={hasMore} loadingMore={loadingMore} loadMore={loadMorePins} />
+      <PinsMasonry pins={currentPins} hasMore={pagination.hasMore} loadingMore={loadingMore} loadMore={loadMorePins} />
       {loadmoreError && (
         <Alert
           message={loadmoreError}

@@ -1,53 +1,60 @@
-import multer from 'multer';
-import path from 'path';
-import fs from 'fs'; // Import fs for directory creation
-import { fileURLToPath } from 'url';
+import multer from "multer";
+import path from "path";
+import fs from "fs"; // Import fs for directory creation
+import { fileURLToPath } from "url";
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log('Created uploads directory:', uploadsDir);
-}
+const storage = multer.memoryStorage();
 
-// Configure storage
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir); // Use absolute path
-  },
-  filename: function (req, file, cb) {
-    // Create unique filename
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    const filename = `${req.params.userId || req.params.id}-${uniqueSuffix}${ext}`;
-    cb(null, filename);
-  }
-});
-
-// File filter (your existing code is good)
+// File filter for images
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /jpeg|jpg|png|gif|webp/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
   const mimetype = allowedTypes.test(file.mimetype);
+  const extname = allowedTypes.test(
+    path.extname(file.originalname).toLowerCase(),
+  );
 
   if (mimetype && extname) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed!'), false);
+    cb(
+      new Error("Only image files (JPEG, PNG, GIF, WebP) are allowed!"),
+      false,
+    );
   }
 };
 
-// Create multer instance
-const upload = multer({
+// Multer instance
+export const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 1,
   },
-  fileFilter: fileFilter
+  fileFilter: fileFilter,
 });
 
-export default upload;
+// Multer error handler
+export const handleUploadError = (err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({
+        success: false,
+        message: "File is too large. Maximum size is 10MB",
+      });
+    }
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  } else if (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+    });
+  }
+  next();
+};

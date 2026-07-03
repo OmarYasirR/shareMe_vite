@@ -1,5 +1,5 @@
 // Containers/SignUp.jsx
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
 import { FiUpload, FiX, FiUser } from "react-icons/fi";
@@ -11,7 +11,7 @@ import { useUserContext } from "../hooks/useUserContext";
 import { convertToBase64, validateImage } from "../utils/imageUtils";
 
 const SignUp = () => {
-  const { dispatch } = useUserContext();
+  const { dispatch, user } = useUserContext();
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -21,8 +21,6 @@ const SignUp = () => {
     password: "",
     confirmPassword: "",
   });
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
 
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
@@ -41,42 +39,9 @@ const SignUp = () => {
     if (error) setError(null);
   };
 
-  const handleImageSelect = async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    try {
-      // Validate image
-      validateImage(file);
-
-      setSelectedImage(file);
-      setError(null);
-
-      // Create preview
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target.result);
-      };
-      reader.readAsDataURL(file);
-    } catch (validationError) {
-      setError(validationError.message);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
-
   const handleImageClick = () => {
     fileInputRef.current?.click();
-  };
-
-  const removeImage = () => {
-    setSelectedImage(null);
-    setImagePreview(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
+  }
 
   const submitHandler = async (e) => {
     e.preventDefault();
@@ -112,17 +77,7 @@ const SignUp = () => {
         email: formData.email.trim(),
         password: formData.password,
       };
-
-      // Convert image to base64 if selected
-      if (selectedImage) {
-        try {
-          const base64Image = await convertToBase64(selectedImage);
-          userData.img = base64Image;
-        } catch (convertError) {
-          console.warn("Image conversion failed:", convertError);
-          // Continue without image if conversion fails
-        }
-      }
+      
 
       const res = await signUpUser(userData);
       if (!res.ok) {
@@ -145,12 +100,20 @@ const SignUp = () => {
     }
   };
 
+  // navigate to home page if user is already logged in
+  useEffect(() => {
+    if (user) {
+      navigate("/");
+    }
+  }, [user, navigate]);
+
+
   return (
     <div className="flex flex-col items-center mb-4">
       {/* Logo */}
-      {/* <div className="p-3 bg-red-400 rounded-lg my-4">
+      <div className="p-3 bg-red-400 rounded-lg my-4">
         <img src={logo} alt="logo" className="w-29 h-auto" />
-      </div> */}
+      </div>
 
       {/* Header */}
         <div className="text-center my-2">
@@ -161,66 +124,6 @@ const SignUp = () => {
       {/* SignUp Card */}
       <div className="shadow-2xl bg-white rounded-2xl p-3 m-1">
         
-
-        {/* Profile Image Upload */}
-        <div className="flex justify-center mb-6">
-          <div className="relative">
-            {/* Image Preview or Placeholder */}
-            <div
-              className="w-24 h-24 rounded-full border-2 border-dashed border-red-300 bg-red-50 flex items-center justify-center cursor-pointer hover:border-red-400 transition-all duration-200 overflow-hidden"
-              onClick={handleImageClick}
-            >
-              {imagePreview ? (
-                <>
-                  <img
-                    src={imagePreview}
-                    alt="Profile preview"
-                    className="w-full h-full object-cover"
-                  />
-                  {/* Remove Image Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeImage();
-                    }}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
-                  >
-                    <FiX size={14} />
-                  </button>
-                </>
-              ) : (
-                <div className="text-center">
-                  <FiUser className="w-8 h-8 text-red-400 mx-auto mb-1" />
-                  <span className="text-xs text-red-600 font-medium">
-                    Add Photo
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Upload Icon */}
-            <div className="absolute bottom-0 right-0 bg-red-500 text-white rounded-full p-2 shadow-lg">
-              <FiUpload size={14} />
-            </div>
-
-            {/* Hidden File Input */}
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleImageSelect}
-              accept="image/jpeg, image/jpg, image/png, image/gif, image/webp"
-              className="hidden"
-            />
-          </div>
-        </div>
-
-        {/* Image Upload Instructions */}
-        <div className="text-center mb-4">
-          <p className="text-xs text-gray-500">
-            Supported formats: JPEG, PNG, GIF, WebP (Max 2MB)
-          </p>
-        </div>
 
         
 
@@ -308,19 +211,6 @@ const SignUp = () => {
               />
             </div>
           </div>
-
-          {/* Image Upload Info
-          {selectedImage && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <p className="text-green-700 text-sm">
-                <strong>Selected:</strong> {selectedImage.name}
-                <br />
-                <span className="text-green-600">
-                  ({(selectedImage.size / 1024 / 1024).toFixed(2)} MB)
-                </span>
-              </p>
-            </div>
-          )} */}
 
           {/* Terms and Conditions */}
           <div className="flex items-start space-x-2 pt-2">

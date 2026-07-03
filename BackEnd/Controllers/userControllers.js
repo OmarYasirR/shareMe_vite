@@ -1,8 +1,12 @@
+// userControllers.js
 import jwt from "jsonwebtoken";
 import User from "../Models/userModel.js";
 import bcrypt from "bcrypt";
-import fs from "fs";
-import path from "path";
+import cloudinary from "../config/cloudinary.js";
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
 
 const createToken = (_id) => {
   if (!process.env.JWT_SECRET) {
@@ -14,159 +18,195 @@ const createToken = (_id) => {
   return token;
 };
 
-export const signIn = async (req, res) => {
-  const user = req.body;
-  
-  try {
-    // If User isn't Sign in with Google
-    if (!user.google) {
-      const usr = await User.findOne({ email: user.email });
-      if (!usr) {
-        return res.status(400).json({ error: "Incorrect Email" });
+/**
+ * Upload image buffer to Cloudinary
+ */
+const uploadToCloudinary = (buffer, options = {}) => {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!buffer || !Buffer.isBuffer(buffer)) {
+        reject(
+          new Error("Invalid buffer: buffer is undefined or not a Buffer"),
+        );
+        return;
       }
 
-      const correctPassword = bcrypt.compare(user.password, usr.password);
-      if (!correctPassword)
-        return res.status(400).json({ error: "Incorrect Password" });
-      const token = createToken(usr._id);
+      console.log("Uploading to Cloudinary, buffer size:", buffer.length);
 
-      const userResponse = {
-        _id: usr._id,
-        firstName: usr.firstName,
-        lastName: usr.lastName,
-        email: usr.email,
-        createdAt: usr.createdAt,
-        updatedAt: usr.updatedAt,
-        img: usr.img,
-        banner: usr.banner,
-        token,
-      };
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          resource_type: "auto",
+          ...options,
+        },
+        (error, result) => {
+          if (error) {
+            console.error("Cloudinary upload error:", error);
+            reject(error);
+          } else {
+            console.log("Cloudinary upload successful:", result.public_id);
+            resolve(result);
+          }
+        },
+      );
 
-      return res.status(200).json({ user: userResponse });
+      uploadStream.write(buffer);
+      uploadStream.end();
+    } catch (error) {
+      console.error("Upload stream error:", error);
+      reject(error);
     }
-    const { email } = user;
-    // if User Sign in with Google
-    const usr = await User.findOne({ email });
+  });
+};
+
+/**
+ * Format user response
+ */
+const formatUserResponse = (user, token = null) => {
+  const response = {
+    _id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    img: user.img || null,
+    banner: user.banner || null,
+  };
+
+  if (token) {
+    response.token = token;
+  }
+
+  return response;
+};
+
+// ============================================
+// AUTH CONTROLLERS
+// ============================================
+
+// google sign up handler function
+
+export const handleGoogleSignUp = async (req, res) => {
+    const usr = req.body;
+  try {
+    console.log(usr)
+    const user = await User.findOne({ email: usr.email });
+    if (user) {
+    const token = createToken(user._id);
+    const userResponse = formatUserResponse(user, token);
+    return res.status(200).json({
+      message: "Successfully logged in with Google",
+      usr: userResponse,
+    });
+  }
+
+  const newUser = await User.create(usr);
+
+  console.log(newUser)
+  // Google users don't need a password
+  const userData = {
+    firstName : newUser.firstName || "Google",
+    lastName: newUser.lastName || "",
+    email: newUser.email,
+    img: newUser.img || null,
+    google: true,
+  };
+
+  const token = createToken(newUser._id);
+  const userResponse = formatUserResponse(newUser, token);
+
+  console.log("Google sign-up completed:", userResponse.email);
+  return res.status(201).json({
+    message: "Google sign-up successful",
+    usr: userResponse,
+  });
+    
+  } catch (error) {
+    console.error("Google Sign in error:", error);
+    res.status(400).json({
+      error: error.message || "Google Sign in failed",
+    });
+  }
+
+
+};
+
+export const signIn = async (req, res) => {
+  const user = req.body;
+  console.log("Sign-in request received:", user);
+
+  try {
+    const usr = await User.findOne({ email: user.email });
 
     if (!usr) {
-      const userObj = {
-        firstName: user.name.split(" ")[0],
-        lastName: user.name.split(" ")[1] || "",
-        email: user.email,
-        google: true,
-      };
-      const newUser = await User.create(userObj);
-      const token = createToken(newUser._id);
-      const userResponse = {
-        _id: newUser._id,
-        firstName: newUser.firstName,
-        lastName: newUser.lastName,
-        email: newUser.email,
-        createdAt: newUser.createdAt,
-        updatedAt: newUser.updatedAt,
-        token,
-      };
-
-      return res.status(200).json({ user: userResponse });
+      return res.status(400).json({ error: "Incorrect Email" });
     }
 
-    console.log(usr);
-    if (usr) {
-      const token = createToken(usr._id);
-      const userResponse = {
-        _id: usr._id,
-        firstName: usr.firstName,
-        lastName: usr.lastName,
-        email: usr.email,
-        createdAt: usr.createdAt,
-        updatedAt: usr.updatedAt,
-        img: usr.img.data? usr.img: null,
-        banner: usr.banner.data? usr.banner: null,
-        token,
-      };
-
-      return res.status(200).json({ user: userResponse });
+    const correctPassword = await bcrypt.compare(user.password, usr.password);
+    if (!correctPassword) {
+      return res.status(400).json({ error: "Incorrect Password" });
     }
-    const newUser = await User.create({ ...user });
-    const token = createToken(newUser._id);
 
-    res.status(200).json({ token, user: newUser });
+    const token = createToken(usr._id);
+    const userResponse = formatUserResponse(usr, token);
+
+    return res.status(200).json({ user: userResponse })
+
   } catch (error) {
-    res.status(400).json(error);
-    console.log(error);
+    console.error("Sign in error:", error);
+    res.status(400).json({
+      error: error.message || "Sign in failed",
+    });
   }
 };
 
 export const signUp = async (req, res) => {
-  const { firstName, lastName, email, password, img } = req.body;
-
-  console.log('singing in')
+  const { firstName, lastName, email, password, google = false } = req.body;
 
   try {
     // Check if user already exists
-    const existEmail = await User.findOne({ email });
-    if (existEmail) {
-      return res.status(400).json({ error: "Email Already Exists" });
+    const existingUser = await User.findOne({ email });
+
+    if (existingUser) {
+      return res.status(400).json({
+        error: "Email already exists. Please use a different email.",
+      });
     }
 
-    console.log("✅ Email is unique, proceeding...");
-
+    // For email/password sign-up
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user object - FIX 1: Don't wrap in {userData}
     const userData = {
       firstName,
       lastName,
       email,
       password: hashedPassword,
+      google: false,
     };
 
-    // Handle image if provided
-    if (img && img.startsWith("data:image")) {
-      try {
-        const base64Data = img.replace(/^data:image\/\w+;base64,/, "");
-        const buffer = Buffer.from(base64Data, "base64");
-
-        userData.img = {
-          data: buffer,
-          contentType: img.match(/^data:image\/(\w+);base64/)[1],
-        };
-      } catch (imageError) {
-        console.error("Image processing failed:", imageError);
-      }
-    }
     const user = await User.create(userData);
-
-    // FIX 3: Make sure createToken function exists and works
     const token = createToken(user._id);
-
-    // Return user without password and image data
-    const userResponse = {
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-      token,
-    };
-
-    // If user has image, include image URL
-    if (user.img && user.img.data) {
-      userResponse.imgUrl = `/user/users/${user._id}/image`;
-    }
+    const userResponse = formatUserResponse(user, token);
 
     console.log("Signup completed:", userResponse.email);
-    res.status(201).json({ user: userResponse } );
+    res.status(201).json({
+      message: "Sign-up successful",
+      user: userResponse,
+    });
   } catch (error) {
     console.error("Signup error:", error);
 
-    // FIX 4: Send proper error response
     if (error.name === "ValidationError") {
       const errors = Object.values(error.errors).map((err) => err.message);
       return res.status(400).json({ error: errors.join(", ") });
+    }
+
+    if (error.code === 11000) {
+      return res.status(400).json({
+        error: "Email already exists. Please use a different email.",
+      });
     }
 
     res.status(400).json({
@@ -178,6 +218,7 @@ export const signUp = async (req, res) => {
 export const fetchGoogleUser = async (req, res) => {
   const { code } = req.body;
   console.log("Received Google auth code:", code);
+
   try {
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -195,15 +236,14 @@ export const fetchGoogleUser = async (req, res) => {
       throw new Error("Failed to fetch token from Google");
     }
 
-    const user = await tokenResponse.json();
-    // user contains: sub (Google ID), email, name, picture, etc.
-    console.log("Google user data fetched:", user);
-    // 3. Return user data to frontend
+    const userData = await tokenResponse.json();
+    console.log("Google user data fetched:", userData);
+
     res.json({
-        googleId: user.sub,
-        email: user.email,
-        name: user.name,
-        img: user.picture,
+      googleId: userData.sub,
+      email: userData.email,
+      name: userData.name,
+      img: userData.picture,
     });
   } catch (error) {
     console.error("Google auth error:", error.message);
@@ -233,17 +273,8 @@ export const verifyUser = async (req, res) => {
       });
     }
 
-    // Return user data
-    const userResponse = {
-      _id: user._id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      img: user.img,
-      banner: user.banner,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-    };
+    // FIXED: Use the formatUserResponse function instead of non-existent static method
+    const userResponse = formatUserResponse(user);
 
     res.status(200).json({
       success: true,
@@ -274,6 +305,10 @@ export const verifyUser = async (req, res) => {
   }
 };
 
+// ============================================
+// USER UPDATE CONTROLLERS
+// ============================================
+
 export const updateBanner = async (req, res) => {
   try {
     const userId = req.params.id;
@@ -281,55 +316,91 @@ export const updateBanner = async (req, res) => {
     // Check if user exists
     const user = await User.findById(userId);
     if (!user) {
-      // Delete the uploaded file if user doesn't exist
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
-      }
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     // Check if file was uploaded
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({
+        success: false,
+        message: "No file uploaded",
+      });
     }
 
-    // Delete old banner if exists
-    if (user.banner && user.banner.path) {
-      const oldPath = path.join(process.cwd(), user.banner.path);
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath);
+    // Validate buffer exists
+    if (!req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid file data",
+      });
+    }
+
+    // Delete old banner from Cloudinary if exists
+    if (user.banner && user.banner.public_id) {
+      try {
+        await cloudinary.uploader.destroy(user.banner.public_id);
+        console.log(
+          "Old banner deleted from Cloudinary:",
+          user.banner.public_id,
+        );
+      } catch (cloudinaryError) {
+        console.error("Cloudinary deletion error:", cloudinaryError);
+        // Continue with upload even if deletion fails
       }
     }
 
-    // Convert image to base64 for storage in MongoDB (optional)
-    const bannerBuffer = fs.readFileSync(req.file.path);
+    // Upload new banner to Cloudinary
+    let cloudinaryResult;
+    try {
+      cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
+        folder: "users/banners",
+        public_id: `banner_${userId}_${Date.now()}`,
+        transformation: [
+          { width: 1500, height: 500, crop: "fill" },
+          { quality: "auto" },
+        ],
+      });
+    } catch (uploadError) {
+      console.error("Cloudinary upload error:", uploadError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload banner to Cloudinary",
+      });
+    }
 
     // Update user with new banner
     user.banner = {
-      data: bannerBuffer, // Store as buffer in DB
+      url: cloudinaryResult.secure_url,
+      public_id: cloudinaryResult.public_id,
       contentType: req.file.mimetype,
+      width: cloudinaryResult.width,
+      height: cloudinaryResult.height,
+      format: cloudinaryResult.format,
     };
 
     await user.save();
-    // Delete the temporary file
-    fs.unlinkSync(req.file.path);
+
+    // Generate new token
     const token = createToken(user._id);
+    const userResponse = formatUserResponse(user, token);
 
     res.status(200).json({
       success: true,
+      message: "Banner updated successfully",
       banner: user.banner,
-      user,
+      user: userResponse,
       token,
     });
   } catch (error) {
     console.error("Error updating banner:", error);
-
-    // Clean up uploaded file on error
-    if (req.file && req.file.path) {
-      fs.unlinkSync(req.file.path);
-    }
-
-    res.status(500).json({ error: "Failed to update banner" });
+    res.status(500).json({
+      success: false,
+      message: "Failed to update banner",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
   }
 };
 
@@ -337,49 +408,212 @@ export const updateAvatar = async (req, res) => {
   try {
     const userId = req.params.id;
     console.log("Updating avatar for user ID:", userId);
-    console.log(req.file);
 
     // Check if user exists
     const user = await User.findById(userId);
     if (!user) {
-      if (req.file) {
-        fs.unlinkSync(req.file.path);
-      }
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
+    // Check if file was uploaded
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({
+        success: false,
+        message: "No file uploaded",
+      });
     }
 
-    // Read the file
-    const avatarBuffer = fs.readFileSync(req.file.path);
+    // Validate buffer exists
+    if (!req.file.buffer) {
+      console.error("File buffer is undefined");
+      return res.status(400).json({
+        success: false,
+        message: "Invalid file data. Please try again.",
+      });
+    }
 
-    // Update user's image in MongoDB
+    console.log("File received:", {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      bufferSize: req.file.buffer.length,
+    });
+
+    // Delete old avatar from Cloudinary if exists
+    if (user.img && user.img.public_id) {
+      try {
+        await cloudinary.uploader.destroy(user.img.public_id);
+        console.log("Old avatar deleted from Cloudinary:", user.img.public_id);
+      } catch (cloudinaryError) {
+        console.error("Cloudinary deletion error:", cloudinaryError);
+        // Continue with upload even if deletion fails
+      }
+    }
+
+    // Upload new avatar to Cloudinary
+    let cloudinaryResult;
+    try {
+      cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
+        folder: "users/avatars",
+        public_id: `avatar_${userId}_${Date.now()}`,
+        transformation: [
+          { width: 400, height: 400, crop: "fill" },
+          { radius: "max" },
+          { quality: "auto" },
+        ],
+      });
+      console.log("Avatar uploaded successfully:", cloudinaryResult.public_id);
+    } catch (uploadError) {
+      console.error("Cloudinary upload error:", uploadError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to upload avatar to Cloudinary",
+      });
+    }
+
+    // Update user with new avatar
     user.img = {
-      data: avatarBuffer,
+      url: cloudinaryResult.secure_url,
+      public_id: cloudinaryResult.public_id,
       contentType: req.file.mimetype,
+      width: cloudinaryResult.width,
+      height: cloudinaryResult.height,
+      format: cloudinaryResult.format,
     };
 
     await user.save();
 
-    // Delete the temporary file
-    fs.unlinkSync(req.file.path);
+    // Generate new token
     const token = createToken(user._id);
+    const userResponse = formatUserResponse(user, token);
 
     res.status(200).json({
       success: true,
+      message: "Avatar updated successfully",
       img: user.img,
-      user,
+      user: userResponse,
       token,
     });
   } catch (error) {
     console.error("Error updating avatar:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update avatar",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
 
-    if (req.file && req.file.path) {
-      fs.unlinkSync(req.file.path);
+// ============================================
+// USER RETRIEVAL CONTROLLERS
+// ============================================
+
+export const getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
     }
 
-    res.status(500).json({ error: "Failed to update avatar" });
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const userResponse = formatUserResponse(user);
+
+    res.status(200).json({
+      success: true,
+      user: userResponse,
+    });
+  } catch (error) {
+    console.error("Get user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch user",
+    });
+  }
+};
+
+export const getAllUsers = async (req, res) => {
+  try {
+    const users = await User.find().select("-password");
+
+    const usersResponse = users.map((user) => formatUserResponse(user));
+
+    res.status(200).json({
+      success: true,
+      count: usersResponse.length,
+      users: usersResponse,
+    });
+  } catch (error) {
+    console.error("Get all users error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch users",
+    });
+  }
+};
+
+export const deleteUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Delete images from Cloudinary if they exist
+    if (user.img && user.img.public_id) {
+      try {
+        await cloudinary.uploader.destroy(user.img.public_id);
+        console.log("Avatar deleted from Cloudinary:", user.img.public_id);
+      } catch (error) {
+        console.error("Failed to delete avatar from Cloudinary:", error);
+      }
+    }
+
+    if (user.banner && user.banner.public_id) {
+      try {
+        await cloudinary.uploader.destroy(user.banner.public_id);
+        console.log("Banner deleted from Cloudinary:", user.banner.public_id);
+      } catch (error) {
+        console.error("Failed to delete banner from Cloudinary:", error);
+      }
+    }
+
+    await User.findByIdAndDelete(id);
+
+    res.status(200).json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete user",
+    });
   }
 };

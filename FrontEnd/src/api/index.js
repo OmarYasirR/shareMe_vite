@@ -1,11 +1,35 @@
+// api.js
 export const API = "http://localhost:4000";
 
 const API_CONFIG = {
   BASE_URL: import.meta.env.VITE_BASE_URL || API,
-  TIMEOUT: 30000,
+  TIMEOUT: 50000,
   MAX_RETRIES: 2,
 };
 
+// Helper to get auth token
+const getAuthToken = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('User'));
+    return user?.token || null;
+  } catch (error) {
+    console.error('Error getting auth token:', error);
+    return null;
+  }
+};
+
+// Helper to get user ID
+const getUserId = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem('User'));
+    return user?._id || null;
+  } catch (error) {
+    console.error('Error getting user ID:', error);
+    return null;
+  }
+};
+
+// Enhanced apiRequest with better error handling
 const apiRequest = async (endpoint, options = {}) => {
   const { retryCount = 0, ...fetchOptions } = options;
 
@@ -13,13 +37,31 @@ const apiRequest = async (endpoint, options = {}) => {
   const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
 
   try {
+    // Don't set Content-Type for FormData - browser will handle it
+    const headers = { ...fetchOptions.headers };
+    
+    // If body is FormData, remove Content-Type header
+    if (fetchOptions.body instanceof FormData) {
+      delete headers['Content-Type'];
+    }
+
     const response = await fetch(`${API_CONFIG.BASE_URL}${endpoint}`, {
       ...fetchOptions,
+      headers,
       signal: controller.signal,
       credentials: "include",
     });
 
     clearTimeout(timeoutId);
+
+    // Handle unauthorized errors
+    if (response.status === 401) {
+      // Clear invalid token
+      localStorage.removeItem('User');
+      // You might want to redirect to login here
+      console.warn('Unauthorized request - token may be expired');
+    }
+
     return response;
   } catch (error) {
     clearTimeout(timeoutId);
@@ -40,6 +82,7 @@ const apiRequest = async (endpoint, options = {}) => {
   }
 };
 
+// User APIs
 export const signInUser = async (user) => {
   const response = await apiRequest("/user/signin", {
     method: "POST",
@@ -48,12 +91,22 @@ export const signInUser = async (user) => {
     },
     body: JSON.stringify(user),
   });
-
-  return response
+  return response;
 };
 
 export const signUpUser = async (userData) => {
   const response = await apiRequest("/user/signup", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(userData),
+  });
+  return response;
+};
+
+export const signInWithGoogle = async (userData) => {
+  const response = await apiRequest("/user/google", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -83,52 +136,33 @@ export const verifyUser = async (token) => {
     },
   });
   return response;
-
-  console.log(token);
-  console.log("verifyUser works");
-  const res = await fetch(`${API}/user/verify`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-  });
-  return res;
 };
 
 export const uploadBanner = async (userId, imageFile) => {
-  const formData = new FormData();
-  formData.append("banner", imageFile);
-  const res = apiRequest(`/user/${userId}/banner`, {
-    method: "POST",
-    body: formData,
-  })
-  return res;
-
-  const response = await fetch(`${API}/user/${userId}/banner`, {
-    method: "POST",
-    body: formData,
+  const token = getAuthToken();
+  
+  const response = await apiRequest(`/user/${userId}/banner`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: imageFile,
   });
-
   return response;
 };
 
 export const uploadAvatar = async (userId, imageFile) => {
-  console.log(imageFile);
+  const token = getAuthToken();
   const formData = new FormData();
   formData.append("avatar", imageFile);
 
-  const res = apiRequest(`/user/${userId}/banner`, {
-    method: "POST",
-    body: formData,
-  })
-  return res;
-
-  const response = await fetch(`${API}/user/${userId}/avatar`, {
-    method: "POST",
+  const response = await apiRequest(`/user/${userId}/avatar`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
     body: formData,
   });
-
   return response;
 };
 
@@ -146,22 +180,10 @@ const pinsAPI = {
     const queryString = queryParams.toString();
     const endpoint = queryString ? `/pins?${queryString}` : "/pins";
 
-    return apiRequest(endpoint);
+    return apiRequest(endpoint);  
   },
 
-  showMore: async (options = {}) => {
-    const queryParams = new URLSearchParams();
-
-    if (options.limit) queryParams.append("limit", options.limit);
-    if (options.skip) queryParams.append("skip", options.skip);
-    if (options.page) queryParams.append("page", options.page);
-
-    const queryString = queryParams.toString();
-    const endpoint = `/pins?${queryString}`;
-    return apiRequest(endpoint);
-  },
-
-  getByUser: async (userId, options={}) => {
+  getByUser: async (userId, options = {}) => {
     const queryParams = new URLSearchParams();
     if (options.limit) queryParams.append("limit", options.limit);
     if (options.skip) queryParams.append("skip", options.skip);
@@ -171,8 +193,8 @@ const pinsAPI = {
     return apiRequest(endpoint);
   },
 
-  getSavedByUser: async (userId, options={}) => {
-      const queryParams = new URLSearchParams();
+  getSavedByUser: async (userId, options = {}) => {
+    const queryParams = new URLSearchParams();
     if (options.limit) queryParams.append("limit", options.limit);
     if (options.skip) queryParams.append("skip", options.skip);
     if (options.page) queryParams.append("page", options.page);
@@ -185,71 +207,90 @@ const pinsAPI = {
     return apiRequest(`/pins/${pinId}`);
   },
 
+  getByCategory: async (category, options = {}) => {
+    const queryParams = new URLSearchParams();
+    if (options.limit) queryParams.append("limit", options.limit);
+    if (options.skip) queryParams.append("skip", options.skip);
+    if (options.page) queryParams.append("page", options.page);
+    const queryString = queryParams.toString();
+    const endpoint = queryString ? `/pins/category/${category}?${queryString}` : `/pins/category/${category}`;
+    return apiRequest(endpoint);
+  },
+
   create: async (pinData) => {
-  // Get token before creating FormData
-  const user = JSON.parse(localStorage.getItem('User')) 
-  const token = user?.token;
-  
-  // Prepare headers
-  const headers = {};
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  return apiRequest("/pins/create", {
-    method: "POST",
-    headers: headers,
-    body: pinData,
-  });
-},
+    const token = getAuthToken();
+    
+    // Prepare headers - don't set Content-Type for FormData
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    return apiRequest("/pins/create", {
+      method: "POST",
+      headers: headers,
+      body: pinData, // pinData should be FormData
+    });
+  },
+
   search: async (query) => {
     return apiRequest("/pins/search", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({query}),
+      headers: { 
+        "Content-Type": "application/json" 
+      },
+      body: JSON.stringify({ query }),
     });
   },
 
   save: async (pinId) => {
+    const token = getAuthToken();
     return apiRequest(`/pins/${pinId}/save`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${JSON.parse(localStorage.getItem('User'))?.token}`
+        "Authorization": `Bearer ${token}`
       },
     });
   },
 
-  unsave: async (pinId, userId) => {
+  unsave: async (pinId) => {
+    const token = getAuthToken();
     return apiRequest(`/pins/${pinId}/unsave`, {
       method: "DELETE",
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${JSON.parse(localStorage.getItem('User'))?.token}`
+        "Authorization": `Bearer ${token}`
       },
     });
   },
 
   delete: async (pinId) => {
+    const token = getAuthToken();
     return apiRequest(`/pins/${pinId}`, {
       method: "DELETE",
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${JSON.parse(localStorage.getItem('User'))?.token}`
+        "Authorization": `Bearer ${token}`
       },
     });
   },
 
   addComment: async (pinId, comment) => {
-    const user = JSON.parse(localStorage.getItem('User')) 
-    console.log(user._id)
-  const token = user?.token;
+    const token = getAuthToken();
+    const userId = getUserId();
+    
     return apiRequest(`/pins/comments`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify({ comment, pinId, userId: user._id}),
+      body: JSON.stringify({ 
+        comment, 
+        pinId, 
+        userId 
+      }),
     });
   },
 
@@ -258,8 +299,8 @@ const pinsAPI = {
   },
 
   editComment: async (pinId, commentId, updatedComment) => {
-    const user = JSON.parse(localStorage.getItem('User'));
-    const token = user?.token;
+    const token = getAuthToken();
+    const userId = getUserId();
     
     return apiRequest(`/pins/${pinId}/comments/${commentId}`, {
       method: "PUT",
@@ -269,14 +310,13 @@ const pinsAPI = {
       },
       body: JSON.stringify({ 
         comment: updatedComment,
-        userId: user._id 
+        userId 
       }),
     });
   },
 
   deleteComment: async (pinId, commentId) => {
-    const user = JSON.parse(localStorage.getItem('User'));
-    const token = user?.token;
+    const token = getAuthToken();
     
     return apiRequest(`/pins/${pinId}/comments/${commentId}`, {
       method: "DELETE",
@@ -287,44 +327,52 @@ const pinsAPI = {
   },
 
   updatePin: async (pinId, pinData) => {
-    const user = JSON.parse(localStorage.getItem('User'));
-    const token = user?.token;
+    const token = getAuthToken();
 
     console.log("Updating pin with data:", pinData);
+    
+    // Prepare headers - don't set Content-Type for FormData
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
     return apiRequest(`/pins/${pinId}`, {
       method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${token}`
-      },
-      body: pinData
+      headers: headers,
+      body: pinData, // pinData should be FormData
     });
   },
 
   like: async (pinId) => {
+    const token = getAuthToken();
     return apiRequest(`/pins/${pinId}/like`, {
       method: "POST",
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${JSON.parse(localStorage.getItem('User'))?.token}`
+        "Authorization": `Bearer ${token}`
       }
     });
   },
 
   unlike: async (pinId) => {
+    const token = getAuthToken();
     return apiRequest(`/pins/${pinId}/like`, {
+      method: "DELETE",
       headers: { 
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${JSON.parse(localStorage.getItem('User'))?.token}`
+        "Authorization": `Bearer ${token}`
       },
-      method: "DELETE",
     });
   },
 };
 
+// Export all APIs
 export const getPins = pinsAPI.getAll;
 export const showMore = pinsAPI.showMore;
 export const getPinsByUser = pinsAPI.getByUser;
 export const getSavedPinsByUser = pinsAPI.getSavedByUser;
+export const getPinsByCategory = pinsAPI.getByCategory;
 export const getPin = pinsAPI.getById;
 export const updatePin = pinsAPI.updatePin;
 export const searchPin = pinsAPI.search;
@@ -338,3 +386,5 @@ export const DeleteComment = pinsAPI.deleteComment;
 export const getPinComments = pinsAPI.getComments;
 export const likePin = pinsAPI.like;
 export const unlikePin = pinsAPI.unlike;
+
+export { apiRequest };

@@ -12,32 +12,22 @@ import {
   MdSend,
   MdDelete,
   MdEdit,
-  MdReport,
-  MdClose,
-  MdPerson,
   MdCalendarToday,
   MdLocationOn,
-  MdLink,
-  MdPin,
-  MdPinEnd,
-  MdPinDrop,
   MdBrokenImage,
   MdImageSearch,
 } from "react-icons/md";
-import { add, formatDistanceToNow, set } from "date-fns";
 import {
   AddComment,
-  API,
   DeletePin,
+  getPin,
   likePin,
   savePin,
   unlikePin,
   unSavePin,
 } from "../api";
-import { useGetPins } from "../hooks/useGetPins";
 import { usePinsContext } from "../hooks/usePinsContext";
 import { useUserContext } from "../hooks/useUserContext";
-import BufferToDataURL from "../utils/BufferToDataURL";
 import UserAvatar from "../components/UserAvatar";
 import Comments from "../components/Comments";
 import Alert from "../components/Alert";
@@ -48,43 +38,26 @@ import formatDate from "../utils/formatDate";
 const Pin = () => {
   const { pinId } = useParams();
   const navigate = useNavigate();
-  const { getPinById, dispatch, error: err } = usePinsContext();
+  const { dispatch, error: globalError } = usePinsContext();
 
+  // State
   const [pin, setPin] = useState(null);
   const [isLiked, setIsLiked] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
   const [showFullDescription, setShowFullDescription] = useState(false);
   const [isSendingComment, setIsSendingComment] = useState(false);
   const [error, setError] = useState(null);
-  const { user } = useUserContext();
   const [isLoading, setIsLoading] = useState(true);
   const [isLiking, setIsLiking] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDelete, setIsDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const { user } = useUserContext();
 
-  // Related pins
-  const [relatedPins, setRelatedPins] = useState([]);
-  const [loadingRelated, setLoadingRelated] = useState(false);
-
-  // Fetch related pins
-  const fetchRelatedPins = async (category, currentPinId) => {
-    try {
-      setLoadingRelated(true);
-      const response = await axios.get(
-        `/api/pins?category=${category}&limit=6`,
-      );
-      const filtered = response.data.filter((pin) => pin._id !== currentPinId);
-      setRelatedPins(filtered.slice(0, 4));
-    } catch (err) {
-      console.error("Error fetching related pins:", err);
-    } finally {
-      setLoadingRelated(false);
-    }
-  };
 
   // Handle like/unlike
   const handleLike = async () => {
@@ -93,42 +66,53 @@ const Pin = () => {
         navigate("/login");
         return;
       }
+
       setIsLiking(true);
+
       if (isLiked) {
-        const res = await unlikePin(pinId, user._id);
+        const res = await unlikePin(pinId);
         if (!res.ok) {
           const errorData = await res.json();
           throw new Error(errorData.message || "Failed to unlike pin");
         }
-        dispatch({
-          type: "TOGGLE_LIKE",
-          payload: { pinId, userId: user._id },
-        });
+
+        // Update local pin state
         setPin((prev) => ({
           ...prev,
           likes: prev.likes.filter((id) => id !== user._id),
         }));
-        setIsLiked(false);
-      } else {
-        console.log(user._id);
-        const res = await likePin(pinId, user._id);
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.message || "Failed to like pin");
-        }
+
+        // Update global state
         dispatch({
           type: "TOGGLE_LIKE",
           payload: { pinId, userId: user._id },
         });
+
+        setIsLiked(false);
+      } else {
+        const res = await likePin(pinId);
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.message || "Failed to like pin");
+        }
+
+        // Update local pin state
         setPin((prev) => ({
           ...prev,
           likes: [...prev.likes, user._id],
         }));
+
+        // Update global state
+        dispatch({
+          type: "TOGGLE_LIKE",
+          payload: { pinId, userId: user._id },
+        });
+
+        setIsLiked(true);
       }
-      setIsLiked(!isLiked);
     } catch (err) {
       console.error("Error toggling like:", err);
-      setError("Failed to like pin");
+      setError(err.message || "Failed to like pin");
     } finally {
       setIsLiking(false);
     }
@@ -141,41 +125,53 @@ const Pin = () => {
         navigate("/login");
         return;
       }
+
       setIsSaving(true);
+
       if (isSaved) {
-        const res = await unSavePin(pinId, user._id);
-        if(!res.ok){
+        const res = await unSavePin(pinId);
+        if (!res.ok) {
           const errorData = await res.json();
           throw new Error(errorData.message || "Failed to unsave pin");
         }
-        dispatch({
-          type: "TOGGLE_SAVE",
-          payload: { pinId, userId: user._id },
-        });
+
+        // Update local pin state
         setPin((prev) => ({
           ...prev,
           save: prev.save.filter((id) => id !== user._id),
         }));
-        setIsSaved(false);
-      } else {
-        const res = await savePin(pinId, user._id);
-        if(!res.ok){
-          const errorData = await res.json();
-          throw new Error(errorData.message || "Failed to save pin");
-        }
+
+        // Update global state
         dispatch({
           type: "TOGGLE_SAVE",
           payload: { pinId, userId: user._id },
         });
+
+        setIsSaved(false);
+      } else {
+        const res = await savePin(pinId);
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.message || "Failed to save pin");
+        }
+
+        // Update local pin state
         setPin((prev) => ({
           ...prev,
           save: [...prev.save, user._id],
         }));
+
+        // Update global state
+        dispatch({
+          type: "TOGGLE_SAVE",
+          payload: { pinId, userId: user._id },
+        });
+
+        setIsSaved(true);
       }
-      setIsSaved(!isSaved);
     } catch (err) {
       console.error("Error toggling save:", err);
-      setError("Failed to save pin");
+      setError(err.message || "Failed to save pin");
     } finally {
       setIsSaving(false);
     }
@@ -191,41 +187,47 @@ const Pin = () => {
         navigate("/login");
         return;
       }
+
       setIsSendingComment(true);
       const response = await AddComment(pinId, commentText);
+      const {data: comment} = await response.json();
+      console.log("Comment added:", comment);
 
-      const comment = await response.json();
+      // Update local pin state
+      setPin((prev) => ({
+        ...prev,
+        comments: [...prev.comments, comment],
+      }));
 
-      setIsSendingComment(false);
-      console.log("Added comment:", comment);
-
+      // Update global state
       dispatch({
         type: "ADD_COMMENT",
         payload: { pinId, comment },
       });
 
-      setPin((prev) => ({
-        ...prev,
-        comments: [comment, ...prev.comments],
-      }));
       setCommentText("");
     } catch (err) {
-      setError("Failed to add comment");
       console.error("Error adding comment:", err);
+      setError("Failed to add comment");
+    } finally {
+      setIsSendingComment(false);
     }
   };
 
   // Handle download image
-  const handleDownload = () => {
-    if (!pin?.img?.data) return;
-
+  const handleDownload = async () => {
     try {
+
+      const response = await fetch(pin?.imgUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = `data:${pin.img.contentType};base64,${pin.img.data}`;
+      link.href = url;
       link.download = `${pin.title.replace(/\s+/g, "_")}.jpg`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Error downloading image:", err);
       setError("Failed to download image");
@@ -242,13 +244,15 @@ const Pin = () => {
           url: window.location.href,
         });
       } else {
-        // Fallback: Copy to clipboard
         await navigator.clipboard.writeText(window.location.href);
-        alert("Link copied to clipboard!");
+        setError("Link copied to clipboard!");
+        setTimeout(() => setError(null), 3000);
       }
     } catch (err) {
-      console.error("Error sharing:", err);
-      setError("Failed to share pin");
+      if (err.name !== "AbortError") {
+        console.error("Error sharing:", err);
+        setError("Failed to share pin");
+      }
     }
   };
 
@@ -264,25 +268,40 @@ const Pin = () => {
       }
       navigate("/");
     } catch (err) {
-      setError("Failed to delete pin");
       console.error("Error deleting pin:", err);
-    } finally { setIsDeleting(false);}
+      setError("Failed to delete pin");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
-
   // Fetch pin data
-  useEffect(() => {
-    if (pinId) {
+  const fetchPinData = async (id) => {
+    try {
       setIsLoading(true);
-      const fetchedPin = getPinById(pinId);
-      if (fetchedPin) {
-        setPin(fetchedPin);
-        setIsLiked(user ? fetchedPin.likes.includes(user._id) : false);
-        setIsSaved(user ? fetchedPin.save.includes(user._id) : false);
-      }
+      const res = await getPin(id);
+      const data = await res.json();
+      setPin(data.pin);
+    } catch (error) {
+      console.error("Error fetching pin data:", error);
+      setError("Failed to fetch pin data");
+    } finally {
       setIsLoading(false);
     }
-  }, [pin, getPinById]);
+  };
+
+  useEffect(() => {
+    if (pinId) {
+      fetchPinData(pinId);
+    }
+  }, [pinId]);
+
+  useEffect(() => {
+    if (pin && user) {
+      setIsLiked(pin.likes?.includes(user._id) || false);
+      setIsSaved(pin.save?.includes(user._id) || false);
+    }
+  }, [pin, user]);
 
   // Loading state
   if (isLoading && !pin) {
@@ -292,9 +311,9 @@ const Pin = () => {
   }
 
   // Error state
-  if (err || !pin) {
+  if (globalError || !pin) {
     return (
-      <div className="bg-gradient-to-b from-gray-50 to-white flex flex-col items-center justify-center">
+      <div className="bg-gradient-to-b from-gray-50 to-white flex flex-col items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="text-6xl mb-4">
             <MdImageSearch className="mx-auto text-gray-300" />
@@ -303,7 +322,7 @@ const Pin = () => {
             Pin Not Found
           </h1>
           <p className="text-gray-600 mb-6">
-            {err || "The pin you are looking for does not exist."}
+            {globalError || "The pin you are looking for does not exist."}
           </p>
           <button
             onClick={() => navigate("/")}
@@ -317,12 +336,14 @@ const Pin = () => {
     );
   }
 
+
   return (
-    <div className="bg-gradient-to-b from-gray-50 to-white">
+    <div className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
       {/* Back Navigation */}
       <div className="container mx-auto px-4 py-6">
         <button
-          onClick={() => navigate(-1)}
+        // navigate to home page
+          onClick={() => navigate("/")}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors group"
         >
           <MdArrowBack className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
@@ -330,35 +351,44 @@ const Pin = () => {
         </button>
       </div>
 
-      <div className="container mx-auto px-4 pb-12">
-        <div className="flex flex-col gap-8">
-          <div className="">
+      <div className="container mx-auto px-4 pb-12 max-w-7xl">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Image Section */}
+          <div className="lg:col-span-2">
             <div className="bg-white rounded-3xl overflow-hidden shadow-xl border border-gray-100">
-              <div className="relative">
-                <div className="relative w-full aspect-[3/2] md:aspect-[4/3] lg:aspect-[16/10] xl:aspect-[16/9] flex items-center justify-center bg-gray-50">
-                  {!imageLoaded && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Spinner size="lg" />
-                    </div>
-                  )}
+              <div className="relative w-full aspect-[4/3] flex items-center justify-center bg-gray-50">
+                {!pin?.imgUrl && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Spinner size="lg" />
+                  </div>
+                )}
+
+                {pin?.imgUrl && !imageError ? (
                   <img
-                    src={BufferToDataURL(pin.img?.data, pin.img?.contentType)}
+                    src={pin.imgUrl}
                     alt={pin.title}
-                    className={`w-auto h-auto max-w-[95%] max-h-[95%] object-contain transition-all duration-500 ${
+                    className={`w-full h-full object-contain transition-all duration-500 ${
                       imageLoaded
                         ? "opacity-100 scale-100"
                         : "opacity-0 scale-95"
                     }`}
                     onLoad={() => setImageLoaded(true)}
                     onError={() => {
+                      setImageError(true);
                       setImageLoaded(true);
-                      // You might want to show a fallback image here
                     }}
                     loading="lazy"
                     decoding="async"
                   />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-gray-400">
+                    <MdBrokenImage className="w-16 h-16 mb-2" />
+                    <span>Image not available</span>
+                  </div>
+                )}
 
-                  {/* Image Overlay Actions */}
+                {/* Image Overlay Actions */}
+                {pin?.imgUrl && !imageError && (
                   <div className="absolute top-4 right-4 flex gap-2">
                     <button
                       onClick={handleDownload}
@@ -375,53 +405,21 @@ const Pin = () => {
                       <MdShare className="w-5 h-5 text-gray-700" />
                     </button>
                   </div>
-                </div>
+                )}
               </div>
             </div>
-
-            {/* Related Pins */}
-            {relatedPins.length > 0 && (
-              <div className="mt-12">
-                <h3 className="text-xl font-bold text-gray-800 mb-6">
-                  More like this
-                </h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {relatedPins.map((relatedPin) => (
-                    <Link
-                      key={relatedPin._id}
-                      to={`/pin/${relatedPin._id}`}
-                      className="group block"
-                    >
-                      <div className="aspect-square rounded-2xl overflow-hidden bg-gray-100">
-                        <img
-                          src={
-                            relatedPin.img?.url ||
-                            `data:${relatedPin.img?.contentType};base64,${relatedPin.img?.data}`
-                          }
-                          alt={relatedPin.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      </div>
-                      <p className="mt-2 text-sm text-gray-600 line-clamp-1">
-                        {relatedPin.title}
-                      </p>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Pin Details */}
-          <div>
+          <div className="lg:col-span-1">
             <div className="bg-white rounded-3xl p-6 shadow-xl border border-gray-100 sticky top-6">
               {/* Header */}
-              <div className="flex justify-between items-start mb-6">
-                <div>
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex-1">
                   <h1 className="text-2xl font-bold text-gray-900 mb-2 capitalize">
                     {pin.title}
                   </h1>
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
                     <MdCalendarToday className="w-4 h-4" />
                     <span>{formatDate(pin.createdAt)}</span>
                     {pin.category && (
@@ -475,13 +473,13 @@ const Pin = () => {
               </div>
 
               {/* Description */}
-              <div className="mb-6">
+              <div className="mb-4">
                 <p
                   className={`text-gray-600 ${
                     showFullDescription ? "" : "line-clamp-3"
                   }`}
                 >
-                  {pin.about}
+                  {pin.about || "No description provided"}
                 </p>
                 {pin?.about?.length > 150 && (
                   <button
@@ -495,7 +493,7 @@ const Pin = () => {
 
               {/* Tags */}
               {pin.tags && pin.tags.length > 0 && (
-                <div className="mb-6">
+                <div className="mb-4">
                   <div className="flex flex-wrap gap-2">
                     {pin.tags.map((tag, index) => (
                       <Link
@@ -511,7 +509,7 @@ const Pin = () => {
               )}
 
               {/* Stats */}
-              <div className="flex items-center gap-6 mb-6 p-4 bg-gray-50 rounded-2xl">
+              <div className="flex items-center gap-6 mb-4 p-4 bg-gray-50 rounded-2xl">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-gray-900">
                     {pin.likes?.length || 0}
@@ -533,7 +531,7 @@ const Pin = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 mb-8">
+              <div className="flex gap-3 mb-4">
                 <button
                   onClick={handleLike}
                   disabled={isLiking}
@@ -541,11 +539,11 @@ const Pin = () => {
                     isLiked
                       ? "bg-red-50 text-red-500 hover:bg-red-100"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  } flex items-center justify-center gap-2`}
+                  } flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {isLiking ? (
-                    <div className="flex items-center gap-2 justify-center font-semibold">
-                      <Spinner color="red" />
+                    <div className="flex items-center gap-2">
+                      <Spinner color="red" size="sm" />
                       <span>{isLiked ? "Unliking..." : "Liking..."}</span>
                     </div>
                   ) : (
@@ -566,11 +564,11 @@ const Pin = () => {
                     isSaved
                       ? "bg-amber-50 text-amber-600 hover:bg-amber-100"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  } flex items-center justify-center gap-2`}
+                  } flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {isSaving ? (
-                    <div className="flex items-center gap-2 justify-center rounded-full font-semibold">
-                      <Spinner color="amber" />
+                    <div className="flex items-center gap-2">
+                      <Spinner color="amber" size="sm" />
                       <span>{isSaved ? "Unsaving..." : "Saving..."}</span>
                     </div>
                   ) : (
@@ -587,7 +585,7 @@ const Pin = () => {
               </div>
 
               {/* Creator Info */}
-              <div className="mb-8 p-4 bg-gray-50 rounded-2xl">
+              <div className="mb-4 p-4 bg-gray-50 rounded-2xl">
                 <div className="flex items-center gap-3">
                   <UserAvatar user={pin.createdUser} size="md" />
                   <div className="flex-1">
@@ -595,9 +593,9 @@ const Pin = () => {
                       to={`/user-profile/${pin.createdUser?._id}`}
                       className="font-semibold text-gray-900 hover:text-red-600 transition-colors"
                     >
-                      {pin.createdUser?.firstName +
-                        " " +
-                        pin.createdUser.lastName || "Unknown User"}
+                      {pin.createdUser?.firstName && pin.createdUser?.lastName
+                        ? `${pin.createdUser.firstName} ${pin.createdUser.lastName}`
+                        : pin.createdUser?.username || "Unknown User"}
                     </Link>
                     <p className="text-sm text-gray-500">Creator</p>
                   </div>
@@ -611,7 +609,7 @@ const Pin = () => {
                 </h3>
 
                 {/* Comment Input */}
-                <form onSubmit={handleCommentSubmit} className="mb-6">
+                <form onSubmit={handleCommentSubmit} className="mb-4">
                   <div className="flex gap-3">
                     <input
                       type="text"
@@ -619,6 +617,7 @@ const Pin = () => {
                       onChange={(e) => setCommentText(e.target.value)}
                       placeholder="Add a comment..."
                       className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      disabled={isSendingComment}
                     />
                     <button
                       type="submit"
@@ -645,9 +644,11 @@ const Pin = () => {
           </div>
         </div>
       </div>
+
+      {/* Alerts */}
       {error && (
         <Alert
-          type="error"
+          type={error.includes("copied") ? "success" : "error"}
           message={error}
           onClose={() => setError(null)}
           isScreen
@@ -667,12 +668,7 @@ const Pin = () => {
       )}
 
       {isDeleting && (
-        <Loading
-          size="lg"
-          color="red"
-          text="Deleting pin..."
-          overlay
-        />
+        <Loading size="lg" color="red" text="Deleting pin..." overlay />
       )}
     </div>
   );

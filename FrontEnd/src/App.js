@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 // import Home from "./Containers/Home";
 import SignIn from "./pages/SignIn";
@@ -11,12 +11,15 @@ import Search from "./pages/Search";
 import UserProfile from "./pages/UserProfile";
 import Pin from "./pages/Pin"; 
 import EditPin from "./pages/EditPin";
+import { UserContext } from "./context/UserContext";
 
 const App = () => {
-  
-  useState(() => {
+
+  useEffect(() => {
     document.title = "ShareMe - Discover and Share Amazing Pins";
   } , [])
+
+
 
   return (
     <div className="ii">
