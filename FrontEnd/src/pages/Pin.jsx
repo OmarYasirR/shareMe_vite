@@ -343,7 +343,7 @@ const Pin = () => {
       <div className="container mx-auto px-4 py-6">
         <button
         // navigate to home page
-          onClick={() => navigate("/")}
+          onClick={() => navigate(-1)}
           className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors group"
         >
           <MdArrowBack className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />

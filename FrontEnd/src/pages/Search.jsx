@@ -29,13 +29,9 @@ const Search = () => {
 
   // Initialize search query from URL param
   useEffect(() => {
-    if (queryParam) {
+    if (queryParam && !searchedPins.length) {
       setSearchQuery(queryParam);
       performSearch(queryParam);
-    } else {
-      // Clear search results if no query
-      dispatch({ type: 'SEARCHIN_SCUCSESS', payload: [] });
-      setHasSearched(false);
     }
   }, [queryParam]);
 
@@ -66,10 +62,10 @@ const Search = () => {
       }
 
       const results = await response.json();
-      
+      console.log('Search results:', results);
       dispatch({ 
         type: 'SEARCHIN_SCUCSESS', 
-        payload: Array.isArray(results) ? results : results.data || [] 
+        payload: results.data || [] 
       });
       setHasSearched(true);
     } catch (error) {
