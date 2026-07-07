@@ -23,6 +23,7 @@ const Pins = () => {
 
 
   console.log("Context pins:", currentPins);
+  console.log("pins:", pins);
   // console.log("Filtered pins:", filteredPins); 
 
   const goToCreatePin = () => {

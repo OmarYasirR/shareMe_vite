@@ -98,6 +98,7 @@ const SideBar = ({ toggleSideBar, setToggleSideBar }) => {
                 fetchPins();
                 setActive(0);
                 setToggleSideBar(false);
+                dispatch({ type: "FILTER_BY_CATEGORY", payload: {...pins, category: 'all'} });
               }}
             >
               <RiHomeFill className='text-amber-500' /> Home
@@ -162,7 +163,6 @@ const SideBar = ({ toggleSideBar, setToggleSideBar }) => {
   };
 
   
-
   return (
       <div className="flex flex-col duration-75 md:w-[25%]">
         {/* Large Screens Sidebar */}
